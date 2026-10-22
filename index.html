@@ -1,0 +1,93 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone GPS Tracker</title>
+</head>
+<body>
+  <h2>Phone GPS Tracker</h2>
+  <button id="start">Start Tracking</button>
+  <button id="stop">Stop Tracking</button>
+  <p id="status">Ready</p>
+  <p>Latitude: <span id="lat">--</span></p>
+  <p>Longitude: <span id="lng">--</span></p>
+
+  <script>
+    const ESP32_URL = "http://172.20.10.2/location";
+    let watchId = null;
+    let lastSent = 0;
+
+    const statusEl = document.getElementById("status");
+
+    document.getElementById("start").onclick = () => {
+      if (!navigator.geolocation) {
+        statusEl.textContent = "GPS API not supported";
+        return;
+      }
+
+      statusEl.textContent = "Requesting location permission...";
+
+      watchId = navigator.geolocation.watchPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+
+          document.getElementById("lat").textContent =
+            lat.toFixed(6);
+          document.getElementById("lng").textContent =
+            lng.toFixed(6);
+
+          if (Date.now() - lastSent < 5000) return;
+          lastSent = Date.now();
+
+          statusEl.textContent = "Sending coordinates...";
+
+          try {
+            const response = await fetch(ESP32_URL, {
+              method: "POST",
+              headers: {
+                "Content-Type": "text/plain"
+              },
+              body: JSON.stringify({
+                latitude: lat,
+                longitude: lng,
+                accuracy: accuracy
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error("ESP32 HTTP " + response.status);
+            }
+
+            statusEl.textContent = "Coordinates sent to ESP32";
+          } catch (error) {
+            statusEl.textContent =
+              "Send failed: " + error.message +
+              ". Browser security may block HTTP access.";
+          }
+        },
+        (error) => {
+          statusEl.textContent =
+            "GPS error: " + error.message;
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 20000
+        }
+      );
+    };
+
+    document.getElementById("stop").onclick = () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      statusEl.textContent = "Tracking stopped";
+    };
+  </script>
+</body>
+</html>

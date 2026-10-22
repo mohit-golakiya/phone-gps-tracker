@@ -5,29 +5,111 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phone GPS Tracker</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f3f6fa;
+      color: #222;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    .card {
+      background: white;
+      padding: 22px;
+      border-radius: 14px;
+      box-shadow: 0 2px 10px #0001;
+    }
+
+    button {
+      padding: 12px 18px;
+      margin: 5px 3px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #start {
+      background: #087f5b;
+      color: white;
+    }
+
+    #stop {
+      background: #d94848;
+      color: white;
+    }
+
+    #status {
+      padding: 12px;
+      background: #edf2f7;
+      overflow-wrap: anywhere;
+    }
+
+    .value {
+      font-size: 18px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+  </style>
 </head>
+
 <body>
-  <h2>Phone GPS Tracker</h2>
-  <button id="start">Start Tracking</button>
-  <button id="stop">Stop Tracking</button>
-  <p id="status">Ready</p>
-  <p>Latitude: <span id="lat">--</span></p>
-  <p>Longitude: <span id="lng">--</span></p>
+  <div class="card">
+    <h2>Phone GPS Tracker</h2>
+
+    <p>
+      <b>ESP32 IP:</b> 10.168.51.91
+    </p>
+
+    <button id="start">Start Tracking</button>
+    <button id="stop">Stop Tracking</button>
+
+    <p id="status">Ready. Press Start Tracking.</p>
+
+    <p>Latitude:</p>
+    <div id="lat" class="value">--</div>
+
+    <p>Longitude:</p>
+    <div id="lng" class="value">--</div>
+
+    <p>GPS Accuracy:</p>
+    <div id="accuracy" class="value">--</div>
+  </div>
 
   <script>
-    const ESP32_URL = "http://172.20.10.2/location";
+    // Current ESP32 IP address
+    const ESP32_URL =
+      "http://10.168.51.91/location";
+
     let watchId = null;
     let lastSent = 0;
+    let sending = false;
 
     const statusEl = document.getElementById("status");
 
+    function showStatus(message) {
+      statusEl.textContent = message;
+    }
+
     document.getElementById("start").onclick = () => {
       if (!navigator.geolocation) {
-        statusEl.textContent = "GPS API not supported";
+        showStatus("GPS is not supported by this browser.");
         return;
       }
 
-      statusEl.textContent = "Requesting location permission...";
+      if (watchId !== null) {
+        showStatus("Tracking is already running.");
+        return;
+      }
+
+      showStatus("Requesting GPS permission...");
 
       watchId = navigator.geolocation.watchPosition(
         async (position) => {
@@ -35,15 +117,25 @@
           const lng = position.coords.longitude;
           const accuracy = position.coords.accuracy;
 
+          // Display phone GPS coordinates
           document.getElementById("lat").textContent =
             lat.toFixed(6);
+
           document.getElementById("lng").textContent =
             lng.toFixed(6);
 
-          if (Date.now() - lastSent < 5000) return;
+          document.getElementById("accuracy").textContent =
+            accuracy.toFixed(1) + " meters";
+
+          // Send at most once every 5 seconds
+          if (Date.now() - lastSent < 5000 || sending) {
+            return;
+          }
+
+          sending = true;
           lastSent = Date.now();
 
-          statusEl.textContent = "Sending coordinates...";
+          showStatus("Sending GPS coordinates to ESP32...");
 
           try {
             const response = await fetch(ESP32_URL, {
@@ -59,20 +151,28 @@
             });
 
             if (!response.ok) {
-              throw new Error("ESP32 HTTP " + response.status);
+              throw new Error("HTTP " + response.status);
             }
 
-            statusEl.textContent = "Coordinates sent to ESP32";
+            showStatus(
+              "GPS sent successfully to ESP32."
+            );
+
           } catch (error) {
-            statusEl.textContent =
-              "Send failed: " + error.message +
-              ". Browser security may block HTTP access.";
+            showStatus(
+              "GPS received: sending failed. " +
+              error.message +
+              ". Check Wi-Fi, IP and browser security."
+            );
+          } finally {
+            sending = false;
           }
         },
+
         (error) => {
-          statusEl.textContent =
-            "GPS error: " + error.message;
+          showStatus("GPS Error: " + error.message);
         },
+
         {
           enableHighAccuracy: true,
           maximumAge: 0,
@@ -86,7 +186,8 @@
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
       }
-      statusEl.textContent = "Tracking stopped";
+
+      showStatus("Tracking stopped.");
     };
   </script>
 </body>
